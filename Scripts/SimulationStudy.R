@@ -97,6 +97,42 @@ cases_wei_obs <- lapply(cases_wei, function(x) c(x, age = age, n = n.obs))
 #List models used in the simulations
 models <- c("Nelson et al.", "Andersson et al.", "Jakobsen et al.", "Weibull mixture")
 
+
+#Create figure with true comparison measures
+sim_datas <- list(do.call(sim_surv, cases_wei_obs[[1]]), 
+                  do.call(sim_surv, cases_wei_obs[[2]]),
+                  do.call(sim_surv, cases_wei_obs[[3]]))
+times <- seq(0, 15, length.out = 100)
+measures <- c("Conditional probability of cure", 
+              "Conditional probability cancer-related death", 
+              "Loss of lifetime")
+#Calculate true comparison measures for each scenario
+generate_results <- lapply(sim_datas, function(sim_data){
+  res1 <- calc.prob.cure(time = times, sim_data = sim_data, eps = 0)
+  res2 <- calc.prob(time = times, sim_data = sim_data)
+  res3 <- calc.ll(time = times, sim_data = sim_data)
+  
+  data.frame(res = c(res1, res2, res3), time = rep(times, 3), 
+             type = rep(measures, each = length(times)))
+})
+#Combine the values and plot 
+res <- do.call(rbind, generate_results)
+res$scenario <- paste0("Scenario ", rep(1:3, each = length(times) * 3))
+
+p <- ggplot(data = res, aes(y = res, x = time)) + geom_line() + 
+  facet_wrap(scenario ~ type, scales = "free_y") + xlab("Time (years)") + ylab("Comparison measure") + 
+  theme_bw()
+
+#Output to file
+if(pdf){
+  pdf(file.path(fig.out, "TrueComparisonMeasures.pdf"), width = 10, height = 8) 
+} else{
+  tiff(file.path(fig.out, "TrueComparisonMeasures.tiff"), res = 300, width = 8 * 300, height = 5 * 300)
+}
+print(p)
+dev.off()
+
+
 #Calculate true loss of lifetime for scenario 2
 times <- seq(0, 15, length.out = 100)
 res <- calc.ll(time = times, sim_data = do.call(sim_surv, cases_wei_obs[[2]]))
