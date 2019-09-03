@@ -52,7 +52,7 @@ fits <- list(Colon = list(fit_Colon, data = Colon),
 
 plot_data <- lapply(fits, function(fit){
   rsfit <- rs.surv(Surv(FU, status) ~ 1 + ratetable(age = age, sex = sex, year = diag_date),
-                   data = fit$data, ratetable = survexp.dk, method = "ederer2")
+                   data = fit$data, ratetable = survexp.dk, method = "ederer1")
   #Adjust time to years
   rsfit$time <- rsfit$time / ayear
   
@@ -79,7 +79,7 @@ npara_plot_data <- do.call(rbind, lapply(plot_data, function(x) x$D))
 npara_plot_data$disease <- factor(rep(diseases, sapply(plot_data, function(x) nrow(x$D))), 
                                   levels = diseases)
 colnames(npara_plot_data)[1] <- "Est"
-npara_plot_data$model <- "Ederer II"
+npara_plot_data$model <- "Ederer I"
 
 if(pdf){
   pdf(file.path(fig.out, "RSCombined.pdf"), width = 10.8, height = 6)
@@ -91,9 +91,9 @@ ggplot(data = npara_plot_data, aes(x = time, y = Est, group = model, colour = mo
   facet_grid(.~disease) + geom_step(data = npara_plot_data, aes(x = time, y = ci.lower), linetype = "dashed") + 
   geom_step(data = npara_plot_data, aes(x = time, y = ci.upper), linetype = "dashed") + 
   geom_line(data = para_plot_data, aes(x = time, y = Est), size = 1) + 
-  scale_colour_manual(values = c("Ederer II" = "black", 
+  scale_colour_manual(values = c("Ederer I" = "black", 
                                  "FMC model" = "darkgray"), 
-                      breaks = c("Ederer II", "FMC model")) + 
+                      breaks = c("Ederer I", "FMC model")) + 
   theme_bw() + 
   theme(legend.position = "bottom", legend.title = element_blank(), 
         legend.text=element_text(size=15),
@@ -141,7 +141,7 @@ cure_rate <- sapply(fit_list, function(fit){
 
 #Crude cure rate
 crude_cure_rates <- sapply(fit_list, function(fit){
-  res <- calc.Crude(fit, time = 100, type = "cancer", rmap = list(year = diag_date))[[1]]
+  res <- calc.Crude(fit, time = 100, type = "disease", rmap = list(year = diag_date))[[1]]
   pred <- sprintf("%.2f", res)
   paste0(pred[1], "(", pred[2], "-", pred[3], ")")
 })
