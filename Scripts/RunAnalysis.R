@@ -1,4 +1,4 @@
-##Compute the all cause survival at 5 years
+##Compute the all-cause survival at 5 years
 
 #DLBCL
 sfit <- survfit(Surv(FU_years, status) ~ 1, data = DLBCL)
@@ -32,24 +32,7 @@ fits <- list(Colon = list(fit_Colon, data = Colon),
              AML = list(fit_AML, data = AML), 
              DLBCL = list(fit_DLBCL,data = DLBCL))
 
-#Calculate non-parametric and parametric relative survival
-# plot_data <- lapply(fits, function(fit){
-#   rsfit <- rs.surv(Surv(FU, status) ~ 1 + ratetable(age = age, sex = sex, year = diag_date),
-#                    data = fit$data, ratetable = survexp.dk, method = "ederer2")
-#   #Adjust time to years
-#   rsfit$time <- rsfit$time / ayear
-#   
-#   #Create data.frame with predictions
-#   D <- data.frame(RS = rsfit$surv, time = rsfit$time, ci.lower = rsfit$lower, ci.upper = rsfit$upper) 
-#   
-#   pred <- predict(fit[[1]], newdata = data.frame(FU_years = D$time), keep.attributes = F)
-#   
-#   D_para <- data.frame(Est = pred)
-#   D_para$time <- D$time
-#   D_para$model <- "FRS model"
-#   list(D = D, D_para = D_para)
-# })
-
+#Compute relative survival probs for parametric and non-parametric model
 plot_data <- lapply(fits, function(fit){
   rsfit <- rs.surv(Surv(FU, status) ~ 1 + ratetable(age = age, sex = sex, year = diag_date),
                    data = fit$data, ratetable = survexp.dk, method = "ederer1")
@@ -106,7 +89,7 @@ ggplot(data = npara_plot_data, aes(x = time, y = Est, group = model, colour = mo
 dev.off()
 
 
-##Create summary table
+##Create summary table for each disease
 data_list <- list(Colon, AML, DLBCL)
 #Mean age
 mean_age <- sapply(data_list, function(data){
@@ -133,6 +116,7 @@ probs_p <- sapply(fit_list, function(fit){
   paste0(pred[1], "(", pred[2], "-", pred[3], ")")
 })
 
+#Parametric cure rate
 cure_rate <- sapply(fit_list, function(fit){
   res <- predict(fit, type = "curerate")[[1]]
   pred <- sprintf("%.2f", res)
@@ -154,7 +138,6 @@ LL_base <- sapply(fit_list, function(fit){
 })
 
 #Create matrix for results
-
 n <- prettyNum(c(nrow(Colon), nrow(AML), nrow(DLBCL)), big.mark=",")
 M <- matrix(ncol = 3, nrow = 6)
 diseases.short <- c("CC", "AML", "DLBCL")
@@ -162,6 +145,7 @@ colnames(M) <- paste0(diseases.short, " (n = ", n, ")")
 rownames(M) <- c("Mean age (range)", "5-year RS (Ederer II)", "5-year RS (parametric)", 
                  "Cure proportion", "Probability of dying due to cancer", 
                  "Baseline loss of lifetime (years)")
+
 #Input each of the above results
 M[1,] <- mean_age
 M[2,] <- probs_np
@@ -203,6 +187,7 @@ if(file.exists(filename)){
       cuRe::calc.Crude.quantile(fit, q = q, max.time = 100, rmap = list(year = diag_date), reverse = TRUE)
     })
   })
+  #Save to file to avoid excessive running time
   save(LOL_eps, sc_allLOL, crude_eps, sc_allCrude, file = filename)
 }
 
@@ -222,10 +207,11 @@ D <- rbind(LL_Colon[[1]], LL_AML[[1]], LL_DLBCL[[1]])
 D$time <- rep(time, 3)
 D$disease <- factor(rep(diseases, each = length(time)), levels = diseases)
 
-#Create data frame with cure point information
+#Create matrix with cure point information
 cpLOL <- sapply(sc_allLOL, function(x) 
   sapply(x, function(y) y$Est))
 
+#Create lines to add to below plot
 df_lines1 <- data.frame(x1 = 0, x2 = c(cpLOL), y1 = rep(LOL_eps, each = 3), 
                         y2 = rep(LOL_eps, each = 3), disease = rep(diseases, 3))
 
@@ -234,6 +220,7 @@ df_lines2 <- data.frame(x1 = c(cpLOL), x2 = c(cpLOL), y1 = -2, y2 = rep(LOL_eps,
 
 lims <- c(min(D$lower.ci), max(D$upper.ci))
 
+#Create plot for the loss of lifetime
 p1 <- ggplot(D, aes(x = time, y = Estimate)) + geom_line() + facet_grid(.~disease) + 
   geom_ribbon(aes(ymin = lower.ci, ymax = upper.ci), alpha = 0.3) + 
   theme_bw() + xlab("Years since diagnosis") + ylab("Loss of lifetime (years)") + 
@@ -260,16 +247,18 @@ D <- rbind(res_Colon[[1]], res_AML[[1]], res_DLBCL[[1]])
 D$time <- rep(time, 3)
 D$disease <- factor(rep(diseases, each = length(time)), levels = diseases)
 
-#Create data frame with cure point information
+#Create matrix with cure point information
 cpcrude <- sapply(sc_allCrude, function(x) 
   sapply(x, function(y) y$Est))
 
+#Create lines to add to below plot
 df_lines1 <- data.frame(x1 = 0, x2 = c(cpcrude), y1 = rep(crude_eps, each = 3), 
                         y2 = rep(crude_eps, each = 3), disease = rep(diseases, 3))
 
 df_lines2 <- data.frame(x1 = c(cpcrude), x2 = c(cpcrude), y1 = -2, y2 = rep(crude_eps, each = 3), 
                         disease = rep(diseases, 3))
 
+#Create plot for the probability of cancer related death
 p2 <- ggplot(D, aes(x = time, y = Estimate)) + geom_line() + facet_grid(.~disease) + 
   geom_ribbon(aes(ymin = lower.ci, ymax = upper.ci), alpha = 0.3) + 
   theme_bw() + xlab("Years since diagnosis") + 
@@ -409,57 +398,8 @@ ggplot(plot_data_all, aes(x = eps, y = Estimate)) + geom_point() +
                      axis.text = element_text(size = 14))
 dev.off()
 
-
+#Display cure point estimates for DLBCL and loss of lifetime with varying MOCR
 new.df <- plot_data_all[plot_data_all$measure == "Loss of lifetime",]
 new.df <- new.df[new.df$disease == "DLBCL",]
 new.df
 
-# #Compute the cure point difference between using 2 and 2.5 years as threshold for the loss of lifetime measure
-# LOL_eps <- c(3, 4)
-# sc_colonLOL <- lapply(LOL_eps, function(q){
-#   cat(q, "\n")
-#   cuRe::calc.LL.quantile(fit_Colon, q = q, max.time = 50, rmap = list(year = diag_date), ci = F)
-# })
-# 
-# sc_colonLOL
-# 
-# #Compute the cure point difference between using 0.5 and 1 years as threshold for the loss of lifetime measure
-# LOL_eps_small <- c(0.5, 1)
-# sc_colonLOL_small <- lapply(LOL_eps_small, function(q){
-#   cat(q, "\n")
-#   cuRe::calc.LL.quantile(fit_Colon, q = q, max.time = 50, rmap = list(year = diag_date), ci = F)
-# })
-# 
-# sc_colonLOL_small
-
-#Plot for PhD defence
-
-# #Create the final plot
-# plot_data_all$disease <- factor(plot_data_all$disease, levels = c("CC", "AML", "DLBCL"), 
-#                                 labels = c("Colon cancer", "Acute myeloid leukemia", "Diffuse large B-cell lymphoma"))
-# 
-# file.out <- "C:/Users/sw1y/Dropbox/PhDDefence/"
-# png(file.path(file.out, "StatCureThresholdsLOL.png"), res = 200, width = 1200, height = 1800) 
-# ggplot(plot_data_all[plot_data_all$measure == "Loss of lifetime",], aes(x = eps, y = Estimate)) + geom_point() + 
-#   facet_grid(disease ~ measure, scale = "free_x") + 
-#   geom_errorbar(aes(ymin = lower.ci, ymax = upper.ci, width = wd)) + 
-#   xlab("Clinical relevant magin") + ylab("Estimated cure point (years after diagnosis)") + 
-#   coord_cartesian(ylim=c(0, 20)) + 
-#   theme_bw() + theme(legend.position = "bottom", legend.title = element_blank(), 
-#                      axis.title=element_text(size=17),
-#                      strip.text = element_text(size=12), 
-#                      axis.text = element_text(size = 14))
-# dev.off()
-# 
-# png(file.path(file.out, "StatCureThresholdsProb.png"), res = 200, width = 1200, height = 1800) 
-# ggplot(plot_data_all[plot_data_all$measure == "Conditional probability of cancer-related death",], 
-#        aes(x = eps, y = Estimate)) + geom_point() + 
-#   facet_grid(disease ~ measure, scale = "free_x") + 
-#   geom_errorbar(aes(ymin = lower.ci, ymax = upper.ci, width = wd)) + 
-#   xlab("Clinical relevant magin") + ylab("Estimated cure point (years after diagnosis)") + 
-#   coord_cartesian(ylim=c(0, 20)) + 
-#   theme_bw() + theme(legend.position = "bottom", legend.title = element_blank(), 
-#                      axis.title=element_text(size=17),
-#                      strip.text = element_text(size=12), 
-#                      axis.text = element_text(size = 14))
-# dev.off()

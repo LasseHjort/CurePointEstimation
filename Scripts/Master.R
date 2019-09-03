@@ -47,11 +47,12 @@ mfrow_par <- par("mfrow")
 #Color palette
 cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
-#Load clinical data
-source("Scripts/LoadData2.R", encoding = "utf-8")
-
-#Run analysis
-source("Scripts/RunAnalysis.R")
+# #Load clinical data
+# source("Scripts/LoadData2.R", encoding = "utf-8")
+# 
+# #Run analysis
+# source("Scripts/RunAnalysis.R")
+# source("Scripts/Analyze_ColonCancer.R")
 
 #Run simulations
 source("Scripts/Setup_simulations.R")

@@ -1,5 +1,6 @@
 #Do simulations
 
+#Function to compute the expected survival from survexp object. 
 exp_function <- function(t, expected){
   s <- summary(expected, t)
   names(s$surv) <- s$time
@@ -8,8 +9,10 @@ exp_function <- function(t, expected){
   a
 }
 
+#Global parameters for gaussian quadrature
 gaussxw <- statmod::gauss.quad(100)
 
+#Function for calculating the loss of lifetime based on the true relative survival model
 calc.ll <- function(time, eps = 0, sim_data){
   tau <- 60
   scale <- (tau - time) / 2
@@ -26,12 +29,14 @@ calc.ll <- function(time, eps = 0, sim_data){
   scale * eval / eval_gen_t - eps
 }
 
-#Function for calculating the cure point based on the loss of lifetime function
+#Function for calculating the cure point based on the "true" loss of lifetime function
 find_cure_point_LOL <- function(sim_data, eps){
   f <- function(time) calc.ll(time, eps = eps, sim_data = sim_data)
   uniroot(f, lower = 0, upper = 30)$root  
 }
 
+#Function for calculating the conditional probability of cancer-related death based 
+#on the true relative survival model
 calc.prob <- function(time, eps = 0, sim_data){
   tau <- 60
   scale <- (tau - time) / 2
@@ -49,80 +54,73 @@ calc.prob <- function(time, eps = 0, sim_data){
   scale * eval / (eval_gen_t * eval_rel_t) - eps
 }
 
-#Function for calculating the cure point based on the conditional probability of cancer related death
+#Function for calculating the cure point based on the "true" conditional probability of cancer related death
 find_cure_point_prob <- function(sim_data, eps){
   f <- function(time) calc.prob(time, eps = eps, sim_data = sim_data)
   uniroot(f, lower = 0, upper = 30)$root  
 }
 
-
+#Function for calculating the conditional probability of cure based on the true relative survival model
 calc.prob.cure <- function(time, eps, sim_data){
   pi <- sim_data$pars[1]
   surv <- pi + (1 - pi) * exp(-sim_data$pars[3] * time ^ sim_data$pars[2])
   1 - pi / surv - eps
 }
 
+#Function for calculating the cure point based on the "true" conditional probability of cure
 find_cure_point_prob.cure <- function(sim_data, eps){
   f <- function(time) calc.prob.cure(time, eps = eps, sim_data = sim_data)
   uniroot(f, lower = 0, upper = 30)$root
 }
 
 
-
+#Simple global function to find equidistant quantiles
 getq <- function(k){
   seq(0, 1, length.out = k)
 }
 
+#Simulation options
+n.sim <- 500
+n.obs <- 2000
+age <- 60
 
-#Create figure with true comparison measures
-sim_datas <- list(do.call(sim_surv, cases_wei_obs[[1]]), 
-                  do.call(sim_surv, cases_wei_obs[[2]]),
-                  do.call(sim_surv, cases_wei_obs[[3]]))
+#Set the number of cores used for the simulations
+n.cores <- 48
+
+#Selected margins of clinical relevance
+eps_LOL <- 1:3
+eps_prob <- c(0.05, 0.1, 0.15)
+
+#Specify simulations
+cases_wei_obs <- lapply(cases_wei, function(x) c(x, age = age, n = n.obs))
+
+#List models used in the simulations
+models <- c("Nelson et al.", "Andersson et al.", "Jakobsen et al.", "Weibull mixture")
+
+#Calculate true loss of lifetime for scenario 2
 times <- seq(0, 15, length.out = 100)
-measures <- c("Conditional probability of cure", 
-              "Conditional probability cancer-related death", 
-              "Loss of lifetime")
-generate_results <- lapply(sim_datas, function(sim_data){
-  res1 <- calc.prob.cure(time = times, sim_data = sim_data, eps = 0)
-  res2 <- calc.prob(time = times, sim_data = sim_data)
-  res3 <- calc.ll(time = times, sim_data = sim_data)
-  
-  data.frame(res = c(res1, res2, res3), time = rep(times, 3), 
-             type = rep(measures, each = length(times)))
-})
-res <- do.call(rbind, generate_results)
-res$scenario <- paste0("Scenario ", rep(1:3, each = length(times) * 3))
+res <- calc.ll(time = times, sim_data = do.call(sim_surv, cases_wei_obs[[2]]))
+new_res <- data.frame(res = res, time = times, type = "True comparison measure", stringsAsFactors = F)
 
-p <- ggplot(data = res, aes(y = res, x = time)) + geom_line() + 
-  facet_wrap(scenario ~ type, scales = "free_y") + xlab("Time (years)") + ylab("Comparison measure") + 
-  theme_bw()
-
-if(pdf){
-  pdf(file.path(fig.out, "TrueComparisonMeasures.pdf"), width = 10, height = 8) 
-} else{
-  tiff(file.path(fig.out, "TrueComparisonMeasures.tiff"), res = 300, width = 8 * 300, height = 5 * 300)
-}
-print(p)
-dev.off()
-
-
-
-new_res <- res[res$scenario == "Scenario 2" & res$type == "Loss of lifetime", c("res", "time")]
-new_res$type <- "True comparison measure"
+#Generate simulations and fit parametric model to compute loss of lifetime
 sim_paras <- cases_wei_obs[[2]]
 sim_data <- do.call(sim_surv, sim_paras)
 fit <- fit.cure.model(Surv(FU_years, status) ~ 1, data = sim_data$D, bhazard = sim_data$D$exp_haz)
+#The parameters are preset to make the point of this example more specific
 parameters <- c(-0.9306061, -0.1333783, -0.274995)
 fit$coefs[[1]] <- parameters[1]
 fit$coefs[[2]] <- parameters[2]
 fit$coefs[[3]] <- parameters[3]
 
+#Calculate loss of lifetime with the pre-selected model
 res.lol <- calc.LL(fit, time = time.points, rmap = list(year = diag_date), var.type = "n")
 D <- data.frame(res = res.lol[[1]]$Estimate, time = time.points)
 D$type <- "Estimated comparison measure"
 
+#Combine true and estimate loss of lifetime
 plot.data <- rbind(new_res, D)
 
+#Plot the loss of lifetime of each model with added lines for the true and estimate cure points
 df_lines1 <- data.frame(x1 = -2, x2 = c(10, 3.2), y1 = c(0.2, 4), 
                         y2 = c(0.2, 4))
 
@@ -143,6 +141,7 @@ p <- ggplot(data = plot.data, aes(y = res, x = time, colour = type)) +
   coord_cartesian(ylim = c(0, max(plot.data$res)), xlim = c(0, 15)) + 
   scale_color_manual(values = cbbPalette, limits = unique(plot.data$type))
 
+#Output to file
 if(pdf){
   pdf(file.path(fig.out, "EstimationError.pdf"), width = 9, height = 6) 
 } else{
@@ -152,93 +151,27 @@ print(p)
 dev.off()
   
 
-
-#Simulation options
-n.sim <- 500
-#n.obs <- c(500, 1000, 2000)
-n.obs <- 2000
-age <- 60
-
-#Set the number of cores used for the simulations
-n.cores <- 48
-
-eps_LOL <- 1:3
-eps_prob <- c(0.05, 0.1, 0.15)
-
-#Specify simulations
-cases_wei_obs <- lapply(cases_wei, function(x) c(x, age = age, n = n.obs))
-models <- c("Nelson et al.", "Andersson et al.", "Jakobsen et al.", "Weibull mixture")
-
 #Run simulations
 filename <- file.path(data.out, "sim_res.RData")
 if(file.exists(filename)){
   load(filename)
 }else{
+  #Set seed
   set.seed(2, "L'Ecuyer")
   L_wei <- vector("list", length(cases_wei_obs))
   for(i in 1:length(cases_wei_obs)){
     cat(i, "\n")
     L <- mclapply(1:n.sim, function(j){
       #cat(j, "\n")
+      #Simulate data
       sim_data <- do.call(sim_surv, cases_wei_obs[[i]])
-      # L <- vector("list", 3)
-      # n <- 50
-      # for(i in 1:3){
-      #   cat(i, "\n")
-      #   res <- rep(NA, length.out = n)
-      #   for(j in 1:n){
-      #     sim_data <- do.call(sim_surv, cases_wei_obs[[i]])
-      #     fit3 <- GenFlexCureModel(Surv(FU_years, status) ~ 1, data = sim_data$D, df = 3, 
-      #                              bhazard = sim_data$D$exp_haz, verbose = F)
-      #     res[j] <- predict(fit3, type = "curerate")[[1]]$Estimate 
-      #   }
-      #   L[[i]] <- res
-      # }
-      # 
-      # L
-      
-      
-      # fit <- rs.surv(Surv(FU, status) ~ ratetable(age = age, sex = sex, year = diag_date),
-      #                ratetable = survexp.dk, data = sim_data$D)
-      # fit$time <- fit$time / ayear
-      # plot(fit, conf.int =F)
-      
-      #Fit Jakobsen et al. model
-      #fit3 <- GenFlexCureModel(Surv(FU_years, status) ~ 1, data = sim_data$D, df = 3, 
-      #                         bhazard = sim_data$D$exp_haz, verbose = F)
-      # plot(fit3, add = T)
-      # 
-      # time <- seq(0.00001, 15, length.out = 100)
-      # true_rs <- sim_data$rel_surv(time = time)
-      # plot(true_rs ~ time, type = "l", ylim = c(0, 1), col = 2)
-      # plot(fit3, add = T, time = time, col = 1)
-      # 
-      # 
-      # #plot(fit3, time = seq(0.001, 50))
-      # a <- calc.LL(fit3, time = time, var.type = "n", rmap = list(year = diag_date))
-      # plot(a, ylim = c(0, 15))
-      # b <- calc.ll(time = time, sim_data = sim_data)
-      # lines(time, b, col = 2)
-      # 
-      # res3 <- lapply(eps_LOL, function(eps){
-      #   calc.LL.quantile(fit3, q = eps, rmap = list(year = diag_date), max.time = 80)
-      # })
-      # a <- sapply(res3, function(x) x$Estimate)
-      # 
-      # b <- sapply(eps_LOL, find_cure_point_LOL, sim_data = sim_data)
-      # a - b
 
-            
       #Fit Nelson et al. model
       fit1 <- stpm2(Surv(FU_years, status) ~ 1, data = sim_data$D, bhazard = sim_data$D$exp_haz, df = 5)
       
       #Knots for Andersson et al. model
       d.times <- sim_data$D$FU_years[sim_data$D$status == 1]
       knots <- sort(c(quantile(d.times, probs = sort(c(getq(6), 0.99)))))
-      #knots[which.max(knots)] <- 10
-      #if(knots[length(knots) - 1] < 4){
-      #  knots <- c(knots, 6)
-      #}
       knots <- log(sort(knots))
       inner.knots <- knots[-c(1, length(knots))]
       bdr.knots <- knots[c(1, length(knots))]
@@ -252,12 +185,14 @@ if(file.exists(filename)){
       fit3 <- GenFlexCureModel(Surv(FU_years, status) ~ 1, data = sim_data$D, df = 4, 
                                bhazard = sim_data$D$exp_haz, verbose = F)
       
+      #Fit Weibull mixture cure model
       fit4 <- fit.cure.model(Surv(FU_years, status) ~ 1, data = sim_data$D, bhazard = sim_data$D$exp_haz)
       
+      #The following commented code has been used to make various tests
       #Plot relative survival
-      f <- function(t) 0.3 + (1 - 0.3) * exp(- 0.9 * t ^ 0.8)
-      curve(f, from = 0, to = 10, add = t, col = 2, ylim = c(0, 1))
-      plot(fit1, newdata = data.frame(age = 50), add = T, line.col = 1)
+      # f <- function(t) 0.3 + (1 - 0.3) * exp(- 0.9 * t ^ 0.8)
+      # curve(f, from = 0, to = 10, add = t, col = 2, ylim = c(0, 1))
+      # plot(fit1, newdata = data.frame(age = 50), add = T, line.col = 1)
       # cure.pred <- predict(fit2, newdata = data.frame(FU_years = 100))
       # g <- function(t) (predict(fit2, newdata = data.frame(FU_years = t)) - cure.pred) / (1 - cure.pred)
       # curve(g, from = 0.0001, to = 10, add = T, col = 1)
@@ -269,12 +204,12 @@ if(file.exists(filename)){
       # #Conditional probability of cancer-related death
       # time.points <- seq(0.001, 10, length.out = 50)
       # # 
-      res_true <- calc.prob(time.points, sim_data = sim_data)
-      plot(res_true ~ time.points, ylim = c(-0.1, 1), type = "l")
-      # # 
-      res1 <- calc.Crude(fit1, type = "condother", reverse = T, rmap = list(year = diag_date),
-                         time = time.points, link = "identity", var.type = "n")
-      plot(res1, col = 2, add = T)
+      # res_true <- calc.prob(time.points, sim_data = sim_data)
+      # plot(res_true ~ time.points, ylim = c(-0.1, 1), type = "l")
+      # # # 
+      # res1 <- calc.Crude(fit1, type = "condother", reverse = T, rmap = list(year = diag_date),
+      #                    time = time.points, link = "identity", var.type = "n")
+      # plot(res1, col = 2, add = T)
       # # 
       # res2 <- calc.Crude(fit2, type = "condother", reverse = T, rmap = list(year = diag_date),
       #                    time = time.points, link = "identity", var.type = "n")
@@ -329,7 +264,6 @@ if(file.exists(filename)){
       # lines(a ~ time.points, col = 2)
       
       #Conditional probability of cancer-related death
-      
       res1 <- lapply(eps_prob, function(eps){
         calc.Crude.quantile(fit1, q = eps, rmap = list(year = diag_date), 
                             reverse = TRUE, max.time = 80)
@@ -355,8 +289,8 @@ if(file.exists(filename)){
       res_prob$eps <- rep(eps_prob, length(models))
       res_prob$model <- rep(models, each = length(eps_prob))
       
-      #Loss of lifetime
       
+      #Loss of lifetime
       res1 <- lapply(eps_LOL, function(eps){
         calc.LL.quantile(fit1, q = eps, rmap = list(year = diag_date), max.time = 80)
       })
@@ -378,8 +312,8 @@ if(file.exists(filename)){
       res_lol$eps <- rep(eps_LOL, length(models))
       res_lol$model <- rep(models, each = length(eps_LOL))
       
-      #Conditional probability of cure
       
+      #Conditional probability of cure
       res2 <- lapply(eps_prob, function(eps){
         calc.cure.quantile(fit2, q = eps, max.time = 80)
       })
@@ -396,12 +330,16 @@ if(file.exists(filename)){
       res_probcure$eps <- rep(eps_prob, length(models) - 1)
       res_probcure$model <- rep(models[-1], each = length(eps_prob))
       
+      #Output results as list
       list(cpProbEstimate = res_prob, cpLOLEstimate = res_lol, cpProbCureEstimate = res_probcure)
     }, mc.cores = n.cores)
     
+    #Input estimate cure points into list
     L_wei[[i]]$cpLOLEstimate <- lapply(L, function(x) x$cpLOLEstimate)
     L_wei[[i]]$cpProbEstimate <- lapply(L, function(x) x$cpProbEstimate)
     L_wei[[i]]$cpProbCureEstimate <- lapply(L, function(x) x$cpProbCureEstimate)
+    
+    #Input true cure point into list
     sim_data <- do.call(sim_surv, cases_wei_obs[[i]])
     L_wei[[i]]$cpProb <- sapply(eps_prob, find_cure_point_prob, sim_data = sim_data)
     L_wei[[i]]$cpLOL <- sapply(eps_LOL, find_cure_point_LOL, sim_data = sim_data)
@@ -413,10 +351,10 @@ if(file.exists(filename)){
   save(L_wei, file = filename)
 }
 
-#models <- c("Andersson et al.", "Jakobsen et al.", "Nelson et al.", "Weibull mixture")
+#The bias and length of confidence interval are computed in the following
 
+#Format the probability of cure results
 D <- lapply(1:length(L_wei), function(i){
-  #Loss of lifetime
   df <- do.call(rbind, L_wei[[i]]$cpProbCureEstimate)
   df$CIlength <- df$upper.ci - df$lower.ci
   df$bias <- abs(df$Est - L_wei[[i]]$cpProbCure)
@@ -424,7 +362,6 @@ D <- lapply(1:length(L_wei), function(i){
   a <- data.frame(eps = eps_prob, True = L_wei[[i]]$cpProbCure)
   rownames(a) <- a$eps
   bias <- aggregate(bias ~ eps*model, data = df, FUN = mean)
-  #bias <- matrix(b$bias, ncol = length(models) - 1)
   CIlength <- aggregate(CIlength ~ eps*model, data = df, FUN = median)
   
   res <- merge(bias, CIlength, by = c("eps", "model"))
@@ -441,9 +378,8 @@ D <- lapply(1:length(L_wei), function(i){
 
 D1 <- do.call(rbind, D)
 
-
+#Format the conditional probability of cancer-related death results
 D <- lapply(1:length(L_wei), function(i){
-  #Loss of lifetime
   df <- do.call(rbind, L_wei[[i]]$cpProbEstimate)
   df$CIlength <- df$upper.ci - df$lower.ci
   df$bias <- abs(df$Est - L_wei[[i]]$cpProb)
@@ -451,7 +387,6 @@ D <- lapply(1:length(L_wei), function(i){
   a <- data.frame(eps = eps_prob, True = L_wei[[i]]$cpProb)
   rownames(a) <- a$eps
   bias <- aggregate(bias ~ eps*model, data = df, FUN = mean)
-  #bias <- matrix(b$bias, ncol = length(models) - 1)
   CIlength <- aggregate(CIlength ~ eps*model, data = df, FUN = median)
   res <- merge(bias, CIlength, by = c("eps", "model"))
   res$True <- a[as.character(res$eps), "True"]
@@ -459,39 +394,13 @@ D <- lapply(1:length(L_wei), function(i){
   res <- res[,od]
   D1 <- reshape(res, direction = "wide", timevar = "model", idvar = "eps")
   D1 <- cbind(a, D1[,-1])
-  
-  # a <- data.frame(eps = eps_prob, True = L_wei[[i]]$cpProb)
-  # b <- aggregate(bias ~ eps*model, data = df, FUN = mean)
-  # bias <- matrix(b$bias, ncol = 4)
-  # a <- cbind(a, bias)
-  # 
-  # for(j in 1:nrow(b)){
-  #   d.new <- df[df$eps == b$eps[j] & df$model == b$model[j],]
-  #   true_cp <- L_wei[[i]]$cpProb[eps_prob == b$eps[j]]
-  #   tab <- table(d.new$lower.ci <= true_cp & d.new$upper.ci >= true_cp)
-  #   b$Coverage[j] <- tab["TRUE"] / nrow(d.new) * 100
-  # }
-  # 
-  # coverage <- matrix(b$Coverage, ncol = 4)
-  # 
-  # #df$cidif <- df$upper.ci - df$lower.ci
-  # conf <- aggregate(var ~ eps*model, data = df, FUN = mean)
-  # conf <- matrix(conf$var, ncol = 4)
-  # a <- cbind(a, conf)
-  # a <- cbind(a, coverage)
-  # pos <- c(1:3, 7, 11, 4, 8, 12, 5, 9, 13, 6, 10, 14)
-  # 
-  # #pos <- c(1:3, 7, 4, 8, 5, 9, 6, 10)
-  # 
-  # D1 <- a[, pos]
   rbind(NA, D1)
 })
 
 D2 <- do.call(rbind, D)
 
-
+#Format the loss of lifetim results
 D <- lapply(1:length(L_wei), function(i){
-  #Loss of lifetime
   df <- do.call(rbind, L_wei[[i]]$cpLOLEstimate)
   df$CIlength <- df$upper.ci - df$lower.ci
   df$bias <- abs(df$Estimate - L_wei[[i]]$cpLOL)
@@ -499,7 +408,6 @@ D <- lapply(1:length(L_wei), function(i){
   a <- data.frame(eps = eps_LOL, True = L_wei[[i]]$cpLOL)
   rownames(a) <- a$eps
   bias <- aggregate(bias ~ eps*model, data = df, FUN = mean)
-  #bias <- matrix(b$bias, ncol = length(models) - 1)
   CIlength <- aggregate(CIlength ~ eps*model, data = df, FUN = median)
   res <- merge(bias, CIlength, by = c("eps", "model"))
   res$True <- a[as.character(res$eps), "True"]
@@ -507,25 +415,6 @@ D <- lapply(1:length(L_wei), function(i){
   res <- res[,od]
   D1 <- reshape(res, direction = "wide", timevar = "model", idvar = "eps")
   D1 <- cbind(a, D1[,-1])
-  
-  # for(j in 1:nrow(b)){
-  #   d.new <- df[df$eps == b$eps[j] & df$model == b$model[j],]
-  #   true_cp <- L_wei[[i]]$cpLOL[eps_LOL == b$eps[j]]
-  #   tab <- table(d.new$lower.ci <= true_cp & d.new$upper.ci >= true_cp)
-  #   b$Coverage[j] <- tab["TRUE"] / nrow(d.new) * 100
-  # }
-  # 
-  # coverage <- matrix(b$Coverage, ncol = 4)
-  # 
-  # #df$cidif <- df$upper.ci - df$lower.ci
-  # conf <- aggregate(var ~ eps*model, data = df, FUN = mean)
-  # conf <- matrix(conf$var, ncol = 4)
-  # a <- cbind(a, conf)
-  # a <- cbind(a, coverage)
-  # pos <- c(1:3, 7, 11, 4, 8, 12, 5, 9, 13, 6, 10, 14)
-  # 
-  # #pos <- c(1:3, 7, 4, 8, 5, 9, 6, 10)
-  # D1 <- a[, pos]
   rbind(NA, D1)
 })
 D3 <- do.call(rbind, D)
@@ -537,6 +426,7 @@ wh <- which(is.na(df$lower.ci))
 df[wh,]
 2 / 500 * 100
 
+#Create table with all results
 D.all <- rbind(D1, D2, D3)
 D.all <- cbind(Scenario = c("Scenario 1", NA, NA, NA, "Scenario 2", NA, NA, NA, "Scenario 3", NA, NA, NA,
                             "Scenario 1", NA, NA, NA, "Scenario 2", NA, NA, NA, "Scenario 3", NA, NA, NA,

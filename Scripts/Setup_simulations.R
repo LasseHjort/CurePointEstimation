@@ -58,19 +58,18 @@ sim_surv <- function(pars, age, n){
   D$FU <- pmin(D$fu, sim_cens)
   D$status <- as.numeric(D$fu <= sim_cens)
   D$FU[D$FU < 1e-3] <- 1e-3
-  # plot(survfit(Surv(FU, status) ~ 1, data = D))
-  # curve(rel_surv, from = 0, to = 15, add = T, col = 2)
+  
   #Follow-up in days
   D$FU <- D$FU *  ayear
-  # rsfit <- rs.surv(Surv(FU, status) ~ 1 + ratetable(age = age, sex = sex, year = diag_date), 
-  #                  data = D, ratetable = survexp.dk, method = "ederer2")
-  # 
-  # plot(rsfit)
-  # abline(h = 0.5)
+  
+  #Follow-up in years
   D$FU_years <- D$FU / ayear
+  
   #Get general population hazard
   D$exp_haz <- general.haz(time = "FU", age = "age", sex = "sex", year = "diag_date", 
                            data = D, ratetable = survexp.dk)
+  
+  #Output in a list
   list(D = D, pars = pars, rel_surv = rel_surv, S_exp = S_exp, haz_fun = haz_fun,
        surv_can_fun = surv_can_fun, dens_can_fun = dens_can_fun)
 }
@@ -81,18 +80,15 @@ cases_wei <- list(list(c(pi = 0.2, shape = 1.2, scale = 1)),
                   list(c(pi = 0.3, shape = 0.8, scale = 0.9)),
                   list(c(pi = 0.6, shape = 1.2, scale = 1)))
 
-
+#Time points used to plot true relative survival
 time.points <- seq(0, 15, length.out = 100)
 
+#Plot the true relative survival trajectory
 wei <- function(pars) pars[1] + (1 - pars[1]) * exp(-pars[3] * time.points ^ pars[2])
-
 L <- lapply(cases_wei, function(pars) wei(pars[[1]]))
-D_wei <- data.frame(surv = do.call(c, L), time.points = rep(time.points, length(cases_wei)), 
-                    Scenario = rep(1:length(cases_wei), each = length(time.points)), 
-                    Model = "Weibull")
-
-
-D <- D_wei
+D <- data.frame(surv = do.call(c, L), time.points = rep(time.points, length(cases_wei)), 
+                Scenario = rep(1:length(cases_wei), each = length(time.points)), 
+                Model = "Weibull")
 D$Scenario <- factor(D$Scenario)
 
 p <- ggplot(D, aes(x = time.points, y = surv, group = Scenario, colour = Scenario)) + geom_line(size = 1.1) +
@@ -106,7 +102,7 @@ p <- ggplot(D, aes(x = time.points, y = surv, group = Scenario, colour = Scenari
   geom_vline(xintercept = 10, linetype = "dashed") + guides(colour = guide_legend(nrow = 1)) + ylim(0,1) + 
   scale_color_brewer(palette = "Set2")
 
-
+#Output to file
 if(pdf){
   pdf(file.path(fig.out, "Cases.pdf"), width = 9, height = 6) 
 } else{
@@ -115,7 +111,7 @@ if(pdf){
 print(p)
 dev.off()
 
-
+#Display simulation parameters in table
 D <- do.call(rbind, lapply(cases_wei, function(x)x[[1]]))
 D <- cbind(Scenario = as.character(1:3), D)
 

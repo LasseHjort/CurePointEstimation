@@ -5,23 +5,14 @@ Colon2 <- Colon2[Colon2$UICC %in% paste0("UICC stadium ", c("I", "II", "III", "I
 #Create dichotomized stage variable
 Colon2$stage <- as.numeric(Colon2$UICC %in% c("UICC stadium III", "UICC stadium IV"))
 
-
-#Check out the relative survival
-# rsfit <- rs.surv(Surv(FU, status)~ 1 + ratetable(age = age, sex = sex, year = diag_date), 
-#                  data = Colon2[Colon2$stage == 0,], ratetable = survexp.dk, method = "ederer2")
-# rsfit$time <- rsfit$time / ayear
-# plot(rsfit)
-
-
 #Create age groups
 Colon2$age_group <- cut(Colon2$age_years, breaks = c(0, 55, 65, 75, 120), 
                         labels = c("-60", "60-70", "70-80", "80-"))
 
-#Create indicators for each strata
+#Create indicators for each strata amd collect in data frame
 stage <- rep(0:1, each = nlevels(Colon2$age_group) * 2)
 sex <- rep(rep(c("female", "male"), each = nlevels(Colon2$age_group)), 2)
 age <- rep(levels(Colon2$age_group), 2 * 2)
-
 df <- data.frame(stage = stage, sex = sex, age = age)
 
 #Compute the non-parametric relative survival for each strata
@@ -45,7 +36,6 @@ which.male <- which(sex == "male")
 plot_data.male <- do.call(rbind, L.nonp[which.male])
 plot_data.male$stage <- factor(plot_data.male$stage, levels = 0:1, labels = c("I-II", "III-IV"))
 
-
 ggplot(plot_data.male, aes(x = time, y = surv, colour = stage)) + geom_step() + facet_wrap(~age_group, ncol = 2) + 
   xlab("Follow-up time (years)") + ylab("Relative survival") + theme_bw() + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5)) + 
@@ -59,7 +49,6 @@ which.female <- which(sex == "female")
 plot_data.female <- do.call(rbind, L.nonp[which.female])
 plot_data.female$stage <- factor(plot_data.female$stage, levels = 0:1, labels = c("I-II", "III-IV"))
 
-
 ggplot(plot_data.female, aes(x = time, y = surv, colour = stage)) + geom_step() + facet_wrap(~age_group, ncol = 2) + 
   xlab("Follow-up time (years)") + ylab("Relative survival") + theme_bw() + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5)) + 
@@ -68,16 +57,14 @@ ggplot(plot_data.female, aes(x = time, y = surv, colour = stage)) + geom_step() 
               alpha = 0.3, show.legend = F) + ggtitle("Female colon cancer patients")
 
 
-#Estimate the Nelson et al. model for each strata
+#Estimate the generalized cure model for each strata
 L <- vector("list", length(stage))
 for(i in 1:length(L)){
   cat(i, "\n")
   new.data <- Colon2[Colon2$sex == df$sex[i] & 
                        Colon2$age_group == df$age[i] & 
                        Colon2$stage == df$stage[i], ]
-  # L[[i]] <- stpm2(Surv(FU_years, status) ~ 1, 
-  #                            data = new.data, 
-  #                            df = 5, bhazard = new.data$exp_haz) 
+
   L[[i]] <- GenFlexCureModel(Surv(FU_years, status) ~ 1, 
                              data = new.data, 
                              df = 3, bhazard = "exp_haz", verbose = F) 
@@ -88,7 +75,6 @@ pred <- vector("list", length(stage))
 time <- seq(0, 13, length.out = 100)
 for(i in 1:length(pred)){
   res <- rep(NA, length(time))
-  #res[time != 0] <- predict(L[[i]], newdata = data.frame(FU_years = time[time != 0]), keep.attributes = F)
   res[time != 0] <- predict(L[[i]], time = time[time != 0])[[1]]$Estimate
   res[time == 0] <- 1
   pred[[i]] <- data.frame(surv = res, time = time, stage = stage[i], age_group = age[i])
@@ -113,6 +99,7 @@ p <- ggplot(plot_data.male, aes(x = time, y = surv, colour = stage)) + geom_step
               alpha = 0.3, show.legend = F) + ggtitle("Male colon cancer patients") + 
   geom_line(data = plot_data2.male, linetype = "dashed")
 
+#Output to file
 pdf(paste0(fig.out, "ColonStratRSMale.pdf"), width = 10, height = 8)
 print(p)
 dev.off()
@@ -130,6 +117,7 @@ p <- ggplot(plot_data.female, aes(x = time, y = surv, colour = stage)) + geom_st
               alpha = 0.3, show.legend = F) + ggtitle("Female colon cancer patients") + 
   geom_line(data = plot_data2.female, linetype = "dashed")
 
+#Output to file
 pdf(paste0(fig.out, "ColonStratRSFeMale.pdf"), width = 10, height = 8)
 print(p)
 dev.off()
@@ -269,6 +257,7 @@ p <- ggplot(plot_data, aes(x = Estimate, y = y, colour = threshold)) +
                               axis.text = element_text(size = 14),
                               legend.key.size = unit(2.5,"line"))
 
+#Output to file
 if(pdf) {
   pdf(paste0(fig.out, "SubAnalyses.pdf"), width = 11, height = 8.2) 
 } else{
