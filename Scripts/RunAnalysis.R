@@ -53,6 +53,7 @@ plot_data <- lapply(fits, function(fit){
 #Create disease variable
 diseases <- c("Colon cancer", "Acute myeloid leukemia", "Diffuse large B-cell lymphoma")
 
+
 #Arrange plotting data and plot relative survival
 para_plot_data <- do.call(rbind, lapply(plot_data, function(x) x$D_para))
 para_plot_data$disease <- factor(rep(diseases, sapply(plot_data, function(x) nrow(x$D_para))), 
@@ -65,13 +66,17 @@ colnames(npara_plot_data)[1] <- "Est"
 npara_plot_data$model <- "Ederer I"
 
 if(pdf){
-  pdf(file.path(fig.out, "RSCombined.pdf"), width = 10.8, height = 6)
+  pdf(file.path(fig.out, "RSCombined.pdf"), width = 8, height = 6)
 } else {
   tiff(file.path(fig.out, "RSCombined.tiff"), width = 11 * 300, height = 5 * 300, res = 300)
 }
 
-ggplot(data = npara_plot_data, aes(x = time, y = Est, group = model, colour = model)) + geom_step() + 
-  facet_grid(.~disease) + geom_step(data = npara_plot_data, aes(x = time, y = ci.lower), linetype = "dashed") + 
+npara_plot_data <- npara_plot_data[npara_plot_data$disease == "Colon cancer",]
+para_plot_data <- para_plot_data[para_plot_data$disease == "Colon cancer",]
+ggplot(data = npara_plot_data, 
+       aes(x = time, y = Est, group = model, colour = model)) + geom_step() + 
+  #facet_grid(.~disease) + 
+  geom_step(data = npara_plot_data, aes(x = time, y = ci.lower), linetype = "dashed") + 
   geom_step(data = npara_plot_data, aes(x = time, y = ci.upper), linetype = "dashed") + 
   geom_line(data = para_plot_data, aes(x = time, y = Est), size = 1) + 
   scale_colour_manual(values = c("Ederer I" = "black", 
@@ -138,10 +143,10 @@ LL_base <- sapply(fit_list, function(fit){
 })
 
 #Create matrix for results
-n <- prettyNum(c(nrow(Colon), nrow(AML), nrow(DLBCL)), big.mark=",")
+n <- prettyNum(c(nrow(Colon)), big.mark=",")
 M <- matrix(ncol = 3, nrow = 6)
 diseases.short <- c("CC", "AML", "DLBCL")
-colnames(M) <- paste0(diseases.short, " (n = ", n, ")")
+#colnames(M) <- paste0(diseases.short, " (n = ", n, ")")
 rownames(M) <- c("Mean age (range)", "5-year RS (Ederer II)", "5-year RS (parametric)", 
                  "Cure proportion", "Probability of dying due to cancer", 
                  "Baseline loss of lifetime (years)")
@@ -154,12 +159,14 @@ M[4,] <- cure_rate
 M[5,] <- crude_cure_rates
 M[6,] <- LL_base
 
+M <- M[,1, drop = F]
+colnames(M) <- paste0("n = ", n)
+
 #Print the table to file including legend and caption
 print(xtable(M, 
              caption = "Relative survival estimates, cure proportion, probability of dying due to cancer, and baseline loss of 
-       lifetime estimates. CC: colon cancer, AML: acute myeloid leukemia, 
-             DLBCL: diffuse large B-cell lymphoma, RS: relative survival.", 
-             label = "tab:sum", align = "lccc"), file = paste0(tab.out, "Table_sum.tex"), 
+       lifetime estimates. RS: relative survival.", 
+             label = "tab:sum", align = "lc"), file = paste0(tab.out, "Table_sum.tex"), 
       table.placement = "!ht")
 
 
@@ -218,15 +225,15 @@ df_lines1 <- data.frame(x1 = 0, x2 = c(cpLOL), y1 = rep(LOL_eps, each = 3),
 df_lines2 <- data.frame(x1 = c(cpLOL), x2 = c(cpLOL), y1 = -2, y2 = rep(LOL_eps, each = 3), 
                         disease = rep(diseases, 3))
 
-lims <- c(min(D$lower.ci), max(D$upper.ci))
+lims <- c(min(D[D$disease == "Colon cancer",]$lower.ci), max(D[D$disease == "Colon cancer",]$upper.ci))
 
 #Create plot for the loss of lifetime
-p1 <- ggplot(D, aes(x = time, y = Estimate)) + geom_line() + facet_grid(.~disease) + 
+p1 <- ggplot(D[D$disease == "Colon cancer",], aes(x = time, y = Estimate)) + geom_line() + #facet_grid(.~disease) + 
   geom_ribbon(aes(ymin = lower.ci, ymax = upper.ci), alpha = 0.3) + 
   theme_bw() + xlab("Years since diagnosis") + ylab("Loss of lifetime (years)") + 
   coord_cartesian(ylim = lims, xlim = c(0, 15)) +  
-  geom_segment(data = df_lines1, aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
-  geom_segment(data = df_lines2, aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
+  geom_segment(data = df_lines1[df_lines1$disease == "Colon cancer",], aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
+  geom_segment(data = df_lines2[df_lines2$disease == "Colon cancer",], aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
   theme(axis.title=element_text(size=16),
         strip.text = element_text(size=14), 
         axis.text = element_text(size = 14))
@@ -259,13 +266,13 @@ df_lines2 <- data.frame(x1 = c(cpcrude), x2 = c(cpcrude), y1 = -2, y2 = rep(crud
                         disease = rep(diseases, 3))
 
 #Create plot for the probability of cancer related death
-p2 <- ggplot(D, aes(x = time, y = Estimate)) + geom_line() + facet_grid(.~disease) + 
+p2 <- ggplot(D[D$disease == "Colon cancer",], aes(x = time, y = Estimate)) + geom_line() + #facet_grid(.~disease) + 
   geom_ribbon(aes(ymin = lower.ci, ymax = upper.ci), alpha = 0.3) + 
   theme_bw() + xlab("Years since diagnosis") + 
   ylab("Conditional probability of cancer-related death (%)") + 
   coord_cartesian(ylim = c(0, 1), xlim = c(0, 15)) +  
-  geom_segment(data = df_lines1, aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
-  geom_segment(data = df_lines2, aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
+  geom_segment(data = df_lines1[df_lines1$disease == "Colon cancer",], aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
+  geom_segment(data = df_lines2[df_lines2$disease == "Colon cancer",], aes(x = x1, y = y1, xend = x2, yend = y2), linetype = "dashed") + 
   theme(axis.title=element_text(size=16),
         strip.text = element_text(size=14), 
         axis.text = element_text(size = 14))
@@ -273,12 +280,12 @@ p2 <- ggplot(D, aes(x = time, y = Estimate)) + geom_line() + facet_grid(.~diseas
 
 #Plot conditional probability of cancer related death with cure point markers
 if(pdf){
-  pdf(file.path(fig.out, "ProbDeathLOL.pdf"), width = 11, height = 11) 
+  pdf(file.path(fig.out, "ProbDeathLOL.pdf"), width = 11, height = 6) 
 } else {
   tiff(file.path(fig.out, "ProbDeathLOL.tiff"), res = 300, width = 11 * 300, height = 10 * 300)
 }
 
-grid.arrange(p1, p2, ncol = 1)
+grid.arrange(p1, p2, ncol = 2)
 dev.off()
 
 
@@ -383,23 +390,23 @@ plot_data_all$wd <- rep(c(d2, d1) / 30, each = nrow(plot_data_all) / 2)
   
 #Create the final plot
 if(pdf){
-  pdf(file.path(fig.out, "StatCureThresholds.pdf"), width = 10.5, height = 7.5) 
+  pdf(file.path(fig.out, "StatCureThresholds.pdf"), width = 10.5, height = 6.5) 
 } else {
   tiff(file.path(fig.out, "StatCureThresholds.tiff"), width = 10 * 300, height = 7 * 300, res = 300)
 }
-ggplot(plot_data_all, aes(x = eps, y = Estimate)) + geom_point() + 
-  facet_grid(disease ~ measure, scale = "free_x") + 
+ggplot(plot_data_all[plot_data_all$disease == "CC",], aes(x = eps, y = Estimate)) + geom_point() + 
+  facet_grid(.~ measure, scale = "free_x") + 
   geom_errorbar(aes(ymin = lower.ci, ymax = upper.ci, width = wd)) + 
   xlab("Clinical relevant magin") + ylab("Estimated cure point (years after diagnosis)") + 
-  coord_cartesian(ylim=c(0, 20)) + 
+  coord_cartesian(ylim=c(0, 10)) + 
   theme_bw() + theme(legend.position = "bottom", legend.title = element_blank(), 
                      axis.title=element_text(size=17),
                      strip.text = element_text(size=14), 
                      axis.text = element_text(size = 14))
 dev.off()
 
-#Display cure point estimates for DLBCL and loss of lifetime with varying MOCR
+#Display cure point estimates for colon cancer and loss of lifetime with varying MOCR
 new.df <- plot_data_all[plot_data_all$measure == "Loss of lifetime",]
-new.df <- new.df[new.df$disease == "DLBCL",]
+new.df <- new.df[new.df$disease == "CC",]
 new.df
 
